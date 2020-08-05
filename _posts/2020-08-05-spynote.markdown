@@ -77,7 +77,7 @@ While the distribution channel for the application sample remains unknown, it wa
 
 A SpyNote client can masquerade as legitimate application ([MITRE T1444](https://attack.mitre.org/techniques/T1444/)). Static code analysis indicates that the malware, after successful installation, would install a legitimate application embedded in the `APK` file at `res/raw/google.apk`. See the pseudo code responsible for that feature[^5]. Also, screenshots of cracked SpyNote server v6.4.4[^6] proves that functionality:
 
-<img src="{{site.url}}{{site.img}}\spynote_article.assets\image-20200525143508362.png" alt="APK builder" style="zoom:50%;" />
+<img src="{{site.url}}{{site.img}}/spynote_article.assets/image-20200525143508362.png" alt="APK builder" style="zoom:50%;" />
 
 The adversary can pick a name of the application, service, its version, and the name of a victim to be able to differentiate them. This values can be extracted from the `res/values/strings.xml` file. In this particular example they were set as follows:
 
@@ -90,13 +90,13 @@ The adversary can pick a name of the application, service, its version, and the 
 
 This sample did not include any additional applications and the file `res/raw/google.apk` was empty.
 
-<img src="{{site.url}}{{site.img}}\spynote_article.assets\image-20200525140249109.png" alt="google.apk file" style="zoom:80%;" />
+<img src="{{site.url}}{{site.img}}/spynote_article.assets/image-20200525140249109.png" alt="google.apk file" style="zoom:80%;" />
 
 The reason it was left was so that the malware, when executed, simply loads the legitimate `android.settings.ACCESSIBILITY_SETTINGS` intent:
 
-<img src="{{site.url}}{{site.img}}\spynote_article.assets\Screenshot_1590097404.png" alt="Accessibility intent" style="zoom:30%;"/>{: .align-right}
+<img src="{{site.url}}{{site.img}}/spynote_article.assets/Screenshot_1590097404.png" alt="Accessibility intent" style="zoom:30%;"/>{: .align-right}
 
-![Accessibilitiy intent code]({{site.url}}{{site.img}}\spynote_article.assets\image-20200525142712187.png)
+![Accessibilitiy intent code]({{site.url}}{{site.img}}/spynote_article.assets/image-20200525142712187.png)
 
 #### Persistence
 
@@ -112,11 +112,11 @@ Android applications, including malware, can listen for the `BOOT_COMPLETED` bro
 
 This class waits for the `BOOT_COMPLETED` broadcast, checks if the `com.android.tester.C11` service is already running, and, if not, initiates it. The service is responsible for processing commands received from the C2 server and is also the class where most of the code resides.
 
-![com.android.tester.C4 class code]({{site.url}}{{site.img}}\spynote_article.assets\image-20200518105516838.png)
+![com.android.tester.C4 class code]({{site.url}}{{site.img}}/spynote_article.assets/image-20200518105516838.png)
 
 Moreover, it is worth noting that the application may abuse the device administrator API[^6], and if granted, it will make removal of the malware harder ([MITRE T1401](https://attack.mitre.org/techniques/T1401/)). SpyNote requests that access when it is executed.
 
-<img src="{{site.url}}{{site.img}}\spynote_article.assets\Screenshot_1590097466.png" alt="Device Administrator Access request" style="zoom:33%;" />
+<img src="{{site.url}}{{site.img}}/spynote_article.assets/Screenshot_1590097466.png" alt="Device Administrator Access request" style="zoom:33%;" />
 
 The following are all policies enforced by the spyware:
 
@@ -147,7 +147,7 @@ The above code not only extracts names of the installed applications, but also t
 
 This is what the operators controlling the device see[^8]:
 
-<img src="{{site.url}}{{site.img}}\spynote_article.assets/image-20200526190659939.png" alt="List of extracted applications" style="zoom:66%;" />
+<img src="{{site.url}}{{site.img}}/spynote_article.assets/image-20200526190659939.png" alt="List of extracted applications" style="zoom:66%;" />
 
 There is a large quantity of other data[^7] that malware extracts [(MITRE T1426](https://attack.mitre.org/techniques/T1426/), [T1422)](https://attack.mitre.org/techniques/T1422/), most likely for the operators to be able to easily tell that it is running in a virtual machine [(MITRE T1523)](https://attack.mitre.org/techniques/T1523/). The following are main information categories that the adversary takes advantage of:
 
