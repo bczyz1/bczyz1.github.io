@@ -2,7 +2,7 @@
 layout: post
 title: "An in-depth analysis of SpyNote remote access trojan"
 date: 2020-08-05 20:49:00 +0200
-categories: android malware spyware
+categories: android malware
 ---
 
 *Note: This post is a copy of [an article published on Bulldogjobs](https://bulldogjob.pl/articles/1200-an-in-depth-analysis-of-spynote-remote-access-trojan#1) with extended contents.*
