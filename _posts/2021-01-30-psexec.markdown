@@ -490,28 +490,27 @@ level: high
 
 ## References
 
-[^1]: https://docs.microsoft.com/en-us/sysinternals/downloads/psexec
-[^2]: https://en.wikipedia.org/wiki/Server_Message_Block
-[^3]: https://www.itprotoday.com/compute-engines/psexec
-[^4]: https://attack.mitre.org/software/S0029/
-[^5]: https://github.com/clong/DetectionLab
-[^6]: https://github.com/SecureAuthCorp/impacket
-[^7]: https://github.com/rapid7/metasploit-framework
-[^8]: https://github.com/rapid7/metasploit-framework/blob/2f074ef5870d5e98c109de43f44bb4780f321e11/modules/exploits/windows/smb/psexec.rb#L170
-[^9]: https://www.ultimatewindowssecurity.com/securitylog/encyclopedia/event.aspx?eventID=4697
-[^10]: https://www.ultimatewindowssecurity.com/securitylog/encyclopedia/event.aspx?eventID=7045
-[^11]: https://www.splunk.com/
-[^12]: https://github.com/SecureAuthCorp/impacket/blob/3673c58885bc0c7bcba55bef8409cbb3029641a4/examples/psexec.py#L137
-[^13]: https://github.com/SecureAuthCorp/impacket/blob/3673c58885bc0c7bcba55bef8409cbb3029641a4/examples/psexec.py#L146
-[^14]: https://github.com/SecureAuthCorp/impacket/blob/3673c58885bc0c7bcba55bef8409cbb3029641a4/impacket/examples/serviceinstall.py#L166
-[^15]: https://github.com/SecureAuthCorp/impacket/blob/3673c58885bc0c7bcba55bef8409cbb3029641a4/impacket/examples/serviceinstall.py#L30
-[^16]: https://github.com/rapid7/metasploit-framework/blob/2f074ef5870d5e98c109de43f44bb4780f321e11/modules/exploits/windows/smb/psexec.rb#L181
-[^17]: https://github.com/rapid7/metasploit-framework/blob/2f074ef5870d5e98c109de43f44bb4780f321e11/modules/exploits/windows/smb/psexec.rb#L111
-
-[^18]: https://github.com/SecureAuthCorp/impacket/blob/3673c58885bc0c7bcba55bef8409cbb3029641a4/impacket/examples/serviceinstall.py#L28
-[^19]:https://github.com/rapid7/metasploit-framework/blob/2f074ef5870d5e98c109de43f44bb4780f321e11/lib/msf/core/exploit/remote/smb/client/psexec.rb#L43
-[^20]:https://github.com/Neo23x0/sigma
-[^21]:https://github.com/Neo23x0/sigma/pull/xxxx
-[^22]:https://www.ultimatewindowssecurity.com/securitylog/encyclopedia/event.aspx?eventID=4688
-[^23]:https://en.wikipedia.org/wiki/Security_information_and_event_management
-[^24]:https://github.com/Neo23x0/sigma/pull/xxxx
+[^1]: [https://docs.microsoft.com/en-us/sysinternals/downloads/psexec](https://docs.microsoft.com/en-us/sysinternals/downloads/psexec)
+[^2]: [https://en.wikipedia.org/wiki/Server_Message_Block](https://en.wikipedia.org/wiki/Server_Message_Block)
+[^3]: [https://www.itprotoday.com/compute-engines/psexec](https://www.itprotoday.com/compute-engines/psexec)
+[^4]: [https://attack.mitre.org/software/S0029/](https://attack.mitre.org/software/S0029/)
+[^5]: [https://github.com/clong/DetectionLab](https://github.com/clong/DetectionLab)
+[^6]: [https://github.com/SecureAuthCorp/impacket](https://github.com/SecureAuthCorp/impacket)
+[^7]: [https://github.com/rapid7/metasploit-framework](https://github.com/rapid7/metasploit-framework)
+[^8]: [https://github.com/rapid7/metasploit-framework/blob/2f074ef5870d5e98c109de43f44bb4780f321e11/modules/exploits/windows/smb/psexec.rb#L170](https://github.com/rapid7/metasploit-framework/blob/2f074ef5870d5e98c109de43f44bb4780f321e11/modules/exploits/windows/smb/psexec.rb#L170)
+[^9]: [https://www.ultimatewindowssecurity.com/securitylog/encyclopedia/event.aspx?eventID=4697](https://www.ultimatewindowssecurity.com/securitylog/encyclopedia/event.aspx?eventID=4697)
+[^10]: [https://www.ultimatewindowssecurity.com/securitylog/encyclopedia/event.aspx?eventID=7045](https://www.ultimatewindowssecurity.com/securitylog/encyclopedia/event.aspx?eventID=7045)
+[^11]: [https://www.splunk.com/](https://www.splunk.com/)
+[^12]: [https://github.com/SecureAuthCorp/impacket/blob/3673c58885bc0c7bcba55bef8409cbb3029641a4/examples/psexec.py#L137](https://github.com/SecureAuthCorp/impacket/blob/3673c58885bc0c7bcba55bef8409cbb3029641a4/examples/psexec.py#L137)
+[^13]: [https://github.com/SecureAuthCorp/impacket/blob/3673c58885bc0c7bcba55bef8409cbb3029641a4/examples/psexec.py#L146](https://github.com/SecureAuthCorp/impacket/blob/3673c58885bc0c7bcba55bef8409cbb3029641a4/examples/psexec.py#L146)
+[^14]: [https://github.com/SecureAuthCorp/impacket/blob/3673c58885bc0c7bcba55bef8409cbb3029641a4/impacket/examples/serviceinstall.py#L166](https://github.com/SecureAuthCorp/impacket/blob/3673c58885bc0c7bcba55bef8409cbb3029641a4/impacket/examples/serviceinstall.py#L166)
+[^15]: [https://github.com/SecureAuthCorp/impacket/blob/3673c58885bc0c7bcba55bef8409cbb3029641a4/impacket/examples/serviceinstall.py#L30](https://github.com/SecureAuthCorp/impacket/blob/3673c58885bc0c7bcba55bef8409cbb3029641a4/impacket/examples/serviceinstall.py#L30)
+[^16]: [https://github.com/rapid7/metasploit-framework/blob/2f074ef5870d5e98c109de43f44bb4780f321e11/modules/exploits/windows/smb/psexec.rb#L181](https://github.com/rapid7/metasploit-framework/blob/2f074ef5870d5e98c109de43f44bb4780f321e11/modules/exploits/windows/smb/psexec.rb#L181)
+[^17]: [https://github.com/rapid7/metasploit-framework/blob/2f074ef5870d5e98c109de43f44bb4780f321e11/modules/exploits/windows/smb/psexec.rb#L111](https://github.com/rapid7/metasploit-framework/blob/2f074ef5870d5e98c109de43f44bb4780f321e11/modules/exploits/windows/smb/psexec.rb#L111)
+[^18]: [https://github.com/SecureAuthCorp/impacket/blob/3673c58885bc0c7bcba55bef8409cbb3029641a4/impacket/examples/serviceinstall.py#L28](https://github.com/SecureAuthCorp/impacket/blob/3673c58885bc0c7bcba55bef8409cbb3029641a4/impacket/examples/serviceinstall.py#L28)
+[^19]: [https://github.com/rapid7/metasploit-framework/blob/2f074ef5870d5e98c109de43f44bb4780f321e11/lib/msf/core/exploit/remote/smb/client/psexec.rb#L43](https://github.com/rapid7/metasploit-framework/blob/2f074ef5870d5e98c109de43f44bb4780f321e11/lib/msf/core/exploit/remote/smb/client/psexec.rb#L43)
+[^20]: [https://github.com/Neo23x0/sigma](https://github.com/Neo23x0/sigma)
+[^21]: [https://github.com/Neo23x0/sigma/pull/1348](https://github.com/Neo23x0/sigma/pull/1348)
+[^22]: [https://www.ultimatewindowssecurity.com/securitylog/encyclopedia/event.aspx?eventID=4688](https://www.ultimatewindowssecurity.com/securitylog/encyclopedia/event.aspx?eventID=4688)
+[^23]: [https://en.wikipedia.org/wiki/Security_information_and_event_management](https://en.wikipedia.org/wiki/Security_information_and_event_management)
+[^24]: [https://github.com/Neo23x0/sigma/pull/1349](https://github.com/Neo23x0/sigma/pull/1349)
